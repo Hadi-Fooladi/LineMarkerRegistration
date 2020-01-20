@@ -22,7 +22,11 @@
 #define ITK_LEAN_AND_MEAN
 #endif
 
+#include <fstream>      // std::ofstream
+#include <time.h>
+
 #include <algorithm>
+#include "itkTransformFileReader.h"
 
 #include "itkHessianRecursiveGaussianImageFilter.h"
 #include "itkSmoothingRecursiveGaussianImageFilter.h"
@@ -40,6 +44,8 @@
 #include "itkChangeLabelImageFilter.h"
 
 #include "itkAffineTransform.h"
+#include "itkTransformFileReader.h"
+#include "itkTransformFactoryBase.h"
 
 #include "itkImage.h"
 #include "itkImageFileReader.h"
@@ -79,12 +85,12 @@ public:
   typedef itk::LevenbergMarquardtOptimizer     OptimizerType;
   typedef const OptimizerType *                OptimizerPointer;
 
-  void Execute(itk::Object *caller, const itk::EventObject & event) override
+  void Execute(itk::Object *caller, const itk::EventObject & event)
     {
     Execute( (const itk::Object *)caller, event);
     }
 
-  void Execute(const itk::Object * object, const itk::EventObject & event) override
+  void Execute(const itk::Object * object, const itk::EventObject & event)
     {
     OptimizerPointer optimizer = 
                          dynamic_cast< OptimizerPointer >( object );
@@ -93,7 +99,6 @@ public:
       {
       return;
       }
-
     }
    
 };
@@ -280,7 +285,6 @@ template<class T> int DoIt( int argc, char * argv[], T )
 
   // Number of line markers in the frame. ('point' contains array of [point0, norm0, point1, norm1, ...]
   int nMarkers = points.size() / 2;
-  
   reader->SetFileName( inputVolume.c_str() );
   writer->SetFileName( outputVolume.c_str() );
 
@@ -400,6 +404,8 @@ template<class T> int DoIt( int argc, char * argv[], T )
       {
       // Out of size criteria
       fExclude = true;
+      std::cout << "Excluding due to object Size"<< std::endl;
+
       axisLength[0] = 0.0;
       axisLength[1] = 0.0;
       axisLength[2] = 0.0;
@@ -420,6 +426,8 @@ template<class T> int DoIt( int argc, char * argv[], T )
            axisLength[1] > maximumMinorAxis ||
            axisLength[2] > maximumMinorAxis))
         {
+          std::cout << "Excluding due to Dimensions e.g axis lenghs"<< std::endl;
+          std::cout << "minimumPrincipalAxisLength=" << minimumPrincipalAxisLength << ", " << "maximumPrincipalAxisLength=" << maximumPrincipalAxisLength << ", " << "maximumMinorAxis=" << maximumMinorAxis << std::endl;
         fExclude = true;
         }
       else
@@ -431,6 +439,7 @@ template<class T> int DoIt( int argc, char * argv[], T )
       if (FilterByVesselness && nValidMarkers > nMarkers)
         {
         fExclude = true;
+        std::cout << "Excluding due to Vesselness"<< std::endl;
         }
       }
 
@@ -441,7 +450,7 @@ template<class T> int DoIt( int argc, char * argv[], T )
     TransformType::MatrixType matrix = transform->GetMatrix();
     TransformType::OutputVectorType trans = transform->GetTranslation();
     
-    point[0] = trans[0];
+    point[0] = trans[0];	
     point[1] = trans[1];
     point[2] = trans[2];
     norm[0]  = matrix[2][0];
@@ -555,10 +564,39 @@ template<class T> int DoIt( int argc, char * argv[], T )
   optimizer->SetGradientTolerance( gradientTolerance );
   optimizer->SetEpsilonFunction( epsilonFunction );
 
+//load the initial transform guess
+
+    typedef itk::TransformFileReaderTemplate< double  > TransformReaderType;
+    TransformReaderType::Pointer transformReader = TransformReaderType::New();
+    typedef itk::AffineTransform< double, Dimension > ReadAffineTransformType;
+    ReadAffineTransformType::Pointer initialAffineTransform = ReadAffineTransformType::New();
+    ReadAffineTransformType::Pointer inverseInitialAffineTransform = ReadAffineTransformType::New();
+    initialAffineTransform->SetIdentity();
+
+    transformReader->SetFileName( initialTransform.c_str() );
+
+    try
+      {
+       transformReader->Update();
+       const TransformReaderType::TransformListType * transforms = transformReader->GetTransformList();
+       initialAffineTransform= static_cast< ReadAffineTransformType* >( (*(transforms->begin())).GetPointer() );
+	//for some reason we need to innvert the transform
+	initialAffineTransform->GetInverse(inverseInitialAffineTransform);
+       std::cout << "Setting InitialAffineTransform for the optimizer to : " ;
+       initialAffineTransform->Print(std::cout);
+      }
+    catch( itk::ExceptionObject & excp )
+      {
+      	std::cout << "Error while reading the Initial transform file : User did not provide the initial transform, using identity" << std::endl;
+      	//std::cerr << excp << std::endl;
+      	//std::cerr << "[FAILED]" << std::endl;
+      }
+
 
   // Start from an Identity transform (in a normal case, the user 
   // can probably provide a better guess than the identity...
-  registrationTransform->SetIdentity();
+  registrationTransform->SetMatrix(inverseInitialAffineTransform->GetMatrix());
+ // registrationTransform->SetIdentity();
   RegistrationTransformType::OutputVectorType vec;
   vec[0] = Centroid[0];
   vec[1] = Centroid[1];
@@ -582,16 +620,28 @@ template<class T> int DoIt( int argc, char * argv[], T )
 
   // First pass
   std::cout << "Starting first pass... " << std::endl;
+  double endRMSError = 65535.0;
+  int maxNumIterations = 16; //=360/22.5
+  int iterationCount = 0;
+  do{
   try 
     {
-    registration->Update();
+    registration->Update(); 	
+    //here check the RMS errr at the end of registration and if its not below 3 then rerun with 22.5 deg rotation
+    endRMSError = optimizer->GetOptimizer()->get_end_error();
+    std::cout << "RMS Error= " << endRMSError << "\tat Iteration= " << iterationCount << std::endl;
+    if(endRMSError<3)
+	break;
+    registrationTransform->SetRotation(registrationTransform->GetAngleX(), registrationTransform->GetAngleY()+0.39269908169, registrationTransform->GetAngleZ() );
+    registration->SetInitialTransformParameters( registrationTransform->GetParameters() );
+    iterationCount++;
     }
   catch( itk::ExceptionObject & e )
     {
     std::cout << e << std::endl;
     return EXIT_FAILURE;
     }
-
+ }while( iterationCount<maxNumIterations);
   //// Check for unmatched lines and create a new point set
   ////LineDistanceMetric::LineMatchFlagType lineMatch = metric->GetLineMatchFlag();
   //
@@ -646,9 +696,29 @@ template<class T> int DoIt( int argc, char * argv[], T )
   transform->SetIdentity();
   transform->SetOffset(registrationTransform->GetOffset());
   transform->SetMatrix(registrationTransform->GetMatrix());
-  
+
+  /*  time_t     now = time(0);
+    struct tm  tstruct;
+    char       curTimeStr[80];
+    tstruct = *localtime(&now);
+    strftime(curTimeStr, sizeof(curTimeStr), "%Y-%m-%d-%H-%M-%S.txt", &tstruct);
+   
+    
+
+  std::ofstream ofs;
+  ofs.open (curTimeStr, std::ofstream::out | std::ofstream::app);
+
+  ofs << " more lorem ipsum";
+
+  ofs.close();*/
+
+
+  std::cout << "****************************************************" <<std::endl ;
   std::cout << "Offset:   " << transform->GetOffset() << std::endl;
   std::cout << "Rotation: " << transform->GetMatrix() << std::endl;
+  std::cout << "****************************************************" <<std::endl ;
+  std::cout << "Optimizer Value: " << optimizer->GetValue() << "Optimizer Position: " << optimizer->GetCurrentPosition()  << std::endl;
+  std::cout << "Optimizer stop condition: " << registration->GetOptimizer()->GetStopConditionDescription() << std::endl;
 
   // Calculate Inverse Matrix to pass the transform to Slicer.
   MarkerTransformType::Pointer outputTransform = MarkerTransformType::New();
@@ -674,6 +744,7 @@ template<class T> int DoIt( int argc, char * argv[], T )
 
   return EXIT_SUCCESS;
 }
+
 
 
 } // end of anonymous namespace

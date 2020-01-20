@@ -105,7 +105,7 @@ public:
   typedef typename LineMatchFlagContainerType::Pointer    LineMatchFlagContainerPointer;
 
   /** Get the number of values */
-  unsigned int GetNumberOfValues() const override;
+  unsigned int GetNumberOfValues() const;
 
   double PointToLineDistanceSq( const typename Superclass::InputPointType& point,
                                 const typename Superclass::InputPointType& lineBasePoint,
@@ -113,10 +113,10 @@ public:
 
   /** Get the derivatives of the match measure. */
   void GetDerivative( const TransformParametersType & parameters,
-                      DerivativeType & Derivative ) const override;
+                      DerivativeType & Derivative ) const;
 
   /**  Get the value for single valued optimizers. */
-  MeasureType GetValue( const TransformParametersType & parameters ) const override;
+  MeasureType GetValue( const TransformParametersType & parameters ) const;
 
   /**  Get value and derivatives for multiple valued optimizers. */
   void GetValueAndDerivative( const TransformParametersType & parameters,
@@ -139,7 +139,7 @@ protected:
   virtual ~EuclideanDistanceLineMetric() {};
 
   /** PrintSelf funtion */
-  void PrintSelf(std::ostream& os, Indent indent) const override;
+  void PrintSelf(std::ostream& os, Indent indent) const;
 
   LineMatchFlagContainerPointer m_LineMatchFlag;
     

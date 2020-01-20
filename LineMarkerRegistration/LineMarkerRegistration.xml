@@ -31,13 +31,22 @@ This work is supported by NIH (R01 CA111288, P41 EB015898, U54 EB005149, R01 CA1
       <index>1</index>
       <description>Marker Configuration File</description>
     </file>
-    <image type="label">
+     <image type="label">
       <name>outputVolume</name>
       <label>Output Volume</label>
       <channel>output</channel>
       <index>2</index>
       <description>Blurred Volume</description>
     </image>
+    <transform fileExtensions=".h5">
+      <name>initialTransform</name>
+      <label>Initial transform</label>
+      <flag>-f</flag>
+      <longflag>--transformationFile</longflag>
+      <description>Initial transform for the optimizer.</description>
+      <default/>
+      <channel>input</channel>
+    </transform>
     <transform fileExtensions=".txt" reference="PositionFileName">
       <name>markerTransform</name>
       <longflag>markertransform</longflag>

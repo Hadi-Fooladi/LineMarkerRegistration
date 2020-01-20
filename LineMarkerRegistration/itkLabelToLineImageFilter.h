@@ -94,10 +94,10 @@ public:
 protected:
   LabelToLineImageFilter();
   ~LabelToLineImageFilter() {};
-  void PrintSelf(std::ostream& os, Indent indent) const override;
+  void PrintSelf(std::ostream& os, Indent indent) const;
   
   /** Generate Data */
-  void GenerateData( void ) override;
+  void GenerateData( void );
 
 private:
   LabelToLineImageFilter(const Self&); //purposely not implemented
